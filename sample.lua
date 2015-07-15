@@ -43,6 +43,19 @@ function gprint(str)
     if opt.verbose == 1 then print(str) end
 end
 
+local function codepoint_to_utf8(c)
+    assert((55296 > c or c > 57343) and c < 1114112, "Bad Unicode code point: "..c..".")
+    if c < 128 then
+        return string.char(c)
+    elseif c < 2048 then
+        return string.char(192 + c/64, 128 + c%64)
+    elseif c < 55296 or 57343 < c and c < 65536 then
+        return string.char(224 + c/4096, 128 + c/64%64, 128 + c%64)
+    elseif c < 1114112 then
+        return string.char(240 + c/262144, 128 + c/4096%64, 128 + c/64%64, 128 + c%64)
+    end
+end
+
 -- check that cunn/cutorch are installed if user wants to use the GPU
 if opt.gpuid >= 0 and opt.opencl == 0 then
     local ok, cunn = pcall(require, 'cunn')
@@ -152,7 +165,7 @@ for i=1, opt.length do
     for i=1,state_size do table.insert(current_state, lst[i]) end
     prediction = lst[#lst] -- last element holds the log probabilities
 
-    io.write(ivocab[prev_char[1]])
+    io.write(codepoint_to_utf8(ivocab[prev_char[1]]))
 end
 io.write('\n') io.flush()
 

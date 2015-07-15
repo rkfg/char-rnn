@@ -122,6 +122,28 @@ function CharSplitLMMinibatchLoader:next_batch(split_index)
     return self.x_batches[ix], self.y_batches[ix]
 end
 
+function Utf8to32(utf8str)
+    assert(type(utf8str) == "string")
+    local res, seq, val = {}, 0, nil
+    for i = 1, #utf8str do
+        local c = string.byte(utf8str, i)
+        if seq == 0 then
+            if val ~= nil then
+                table.insert(res, val)
+            end
+            seq = c < 0x80 and 1 or c < 0xE0 and 2 or c < 0xF0 and 3 or
+                  c < 0xF8 and 4 or --c < 0xFC and 5 or c < 0xFE and 6 or
+                  error("invalid UTF-8 character sequence")
+            val = bit.band(c, 2^(8-seq) - 1)
+        else
+            val = bit.bor(bit.lshift(val, 6), bit.band(c, 0x3F))
+        end
+        seq = seq - 1
+    end
+    table.insert(res, val)
+    return res
+end
+
 -- *** STATIC method ***
 function CharSplitLMMinibatchLoader.text_to_tensor(in_textfile, out_vocabfile, out_tensorfile)
     local timer = torch.Timer()
@@ -135,7 +157,8 @@ function CharSplitLMMinibatchLoader.text_to_tensor(in_textfile, out_vocabfile, o
     print('creating vocabulary mapping...')
     -- record all characters to a set
     local unordered = {}
-    for char in rawdata:gmatch'.' do
+    conv = Utf8to32(rawdata)
+    for _,char in ipairs(conv) do
         if not unordered[char] then unordered[char] = true end
     end
     -- sort into a table (i.e. keys become 1..N)
@@ -149,9 +172,9 @@ function CharSplitLMMinibatchLoader.text_to_tensor(in_textfile, out_vocabfile, o
     end
     -- construct a tensor with all the data
     print('putting data into tensor...')
-    local data = torch.ByteTensor(#rawdata) -- store it into 1D first, then rearrange
-    for i=1, #rawdata do
-        data[i] = vocab_mapping[rawdata:sub(i, i)] -- lua has no string indexing using []
+    local data = torch.ShortTensor(#conv) -- store it into 1D first, then rearrange
+    for i, char in ipairs(conv) do
+        data[i] = vocab_mapping[char] -- lua has no string indexing using []
     end
 
     -- save output preprocessed files
